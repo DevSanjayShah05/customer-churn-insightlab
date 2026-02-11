@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+*.pkl
+*.joblib
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data (keep raw data out of git if large)
+data/raw/
+data/processed/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# OS
+.DS_Store
