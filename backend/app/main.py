@@ -8,6 +8,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 
 def find_repo_root(start: str) -> str:
+    """
+    Walk upward from `start` until we find a folder that looks like the repo root.
+    Repo root criteria: contains README.md AND a data/ directory.
+    """
     cur = os.path.abspath(start)
     while True:
         has_readme = os.path.exists(os.path.join(cur, "README.md"))
@@ -16,7 +20,7 @@ def find_repo_root(start: str) -> str:
             return cur
 
         parent = os.path.dirname(cur)
-        if parent == cur:
+        if parent == cur:  # reached filesystem root
             raise FileNotFoundError("Could not locate repo root (README.md + data/).")
         cur = parent
 
@@ -62,7 +66,7 @@ async def predict_churn(file: UploadFile = File(...), threshold: float = 0.5):
         customer_ids = df["customerID"].astype(str)
         df = df.drop(columns=["customerID"])
 
-    # Drop target if present
+    # Drop label if present
     if "Churn" in df.columns:
         df = df.drop(columns=["Churn"])
 
@@ -73,12 +77,34 @@ async def predict_churn(file: UploadFile = File(...), threshold: float = 0.5):
     proba = model.predict_proba(df)[:, 1]
     pred = (proba >= threshold).astype(int)
 
+    def risk_tier(p: float) -> str:
+        if p < 0.33:
+            return "low"
+        elif p < 0.66:
+            return "moderate"
+        return "high"
+
+    tiers = [risk_tier(float(p)) for p in proba]
+
     out = pd.DataFrame({
         "churn_probability": proba,
-        "churn_prediction": pred
+        "churn_prediction": pred,
+        "risk_tier": tiers
     })
 
     if customer_ids is not None:
         out.insert(0, "customerID", customer_ids.values)
 
-    return {"rows": int(len(out)), "predictions": out.to_dict(orient="records")}
+    total = int(len(out))
+    pred_churn = int(out["churn_prediction"].sum())
+    churn_rate = round(pred_churn / total, 4) if total > 0 else 0.0
+
+    return {
+        "rows": total,
+        "kpis": {
+            "total_customers": total,
+            "predicted_churners": pred_churn,
+            "predicted_churn_rate": churn_rate
+        },
+        "predictions": out.to_dict(orient="records")
+    }
