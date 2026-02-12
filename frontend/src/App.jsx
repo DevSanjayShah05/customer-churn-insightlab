@@ -10,13 +10,14 @@ import {
   Cell,
 } from "recharts";
 
-const API_BASE = "http://127.0.0.1:8000";
+// Phase C: env-based API base (for deployment)
+const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
 
 const COLORS = {
-  high: "#ef4444",      // red
-  moderate: "#f59e0b",  // amber
-  low: "#22c55e",       // green
-  primary: "#2563eb",   // blue
+  high: "#ef4444", // red
+  moderate: "#f59e0b", // amber
+  low: "#22c55e", // green
+  primary: "#2563eb", // blue
   cardBorder: "#e5e7eb",
   text: "#0f172a",
   subtext: "#475569",
@@ -30,6 +31,15 @@ export default function App() {
   const [limit, setLimit] = useState(50);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Modal for clickable badges
+  const [modal, setModal] = useState({ open: false, title: "", body: null });
+  function openModal(title, body) {
+    setModal({ open: true, title, body });
+  }
+  function closeModal() {
+    setModal({ open: false, title: "", body: null });
+  }
 
   async function onPredict() {
     setError("");
@@ -57,6 +67,27 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  }
+
+  // Phase C: Clear UI state
+  function onClear() {
+    setData(null);
+    setError("");
+    setRiskFilter("all");
+  }
+
+  // Phase C: Download full response JSON
+  function downloadJSON() {
+    if (!data) return;
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "churn_results.json";
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   const rows = data?.predictions || [];
@@ -94,10 +125,14 @@ export default function App() {
   function downloadCSV() {
     if (!filteredRows.length) return;
 
-    const headers = Object.keys(filteredRows[0]).filter((k) => k !== "top_drivers");
+    const headers = Object.keys(filteredRows[0]).filter(
+      (k) => k !== "top_drivers"
+    );
     const csv = [
       headers.join(","),
-      ...filteredRows.map((r) => headers.map((h) => JSON.stringify(r[h] ?? "")).join(",")),
+      ...filteredRows.map((r) =>
+        headers.map((h) => JSON.stringify(r[h] ?? "")).join(",")
+      ),
     ].join("\n");
 
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -122,15 +157,97 @@ export default function App() {
               <div>
                 <div style={styles.brandName}>Customer Churn InsightLab</div>
                 <div style={styles.brandSub}>
-                  Upload customer data → churn probability + risk tier + KPIs + explainability
+                  Upload customer data → churn probability + risk tier + KPIs +
+                  explainability
                 </div>
               </div>
             </div>
 
             <div style={styles.badges}>
-              <span style={styles.badge}>FastAPI</span>
-              <span style={styles.badge}>LogReg</span>
-              <span style={styles.badge}>Explainable</span>
+              <button
+                style={styles.badgeBtn}
+                onClick={() =>
+                  openModal(
+                    "ML + FastAPI",
+                    <div>
+                      <p style={styles.modalP}>
+                        This app runs a scikit-learn churn model behind a FastAPI
+                        service.
+                      </p>
+                      <ul style={styles.modalUl}>
+                        <li>
+                          <b>GET</b> /health — API status
+                        </li>
+                        <li>
+                          <b>POST</b> /predict/churn — upload CSV → predictions +
+                          KPIs
+                        </li>
+                      </ul>
+                      <p style={styles.modalP}>
+                        The React frontend calls the API and renders KPIs,
+                        charts, and per-customer risk.
+                      </p>
+                    </div>
+                  )
+                }
+              >
+                ML + FastAPI
+              </button>
+
+              <button
+                style={styles.badgeBtn}
+                onClick={() =>
+                  openModal(
+                    "Logistic Regression",
+                    <div>
+                      <p style={styles.modalP}>
+                        Baseline churn classifier using Logistic Regression with
+                        preprocessing (one-hot encoding + scaling) in a single
+                        pipeline.
+                      </p>
+                      <ul style={styles.modalUl}>
+                        <li>Outputs churn probability (0 → 1)</li>
+                        <li>
+                          Threshold default: 0.5 (adjustable via API query
+                          param)
+                        </li>
+                        <li>Strong baseline: fast + interpretable</li>
+                      </ul>
+                    </div>
+                  )
+                }
+              >
+                Logistic Regression
+              </button>
+
+              <button
+                style={styles.badgeBtn}
+                onClick={() =>
+                  openModal(
+                    "Explainable Predictions",
+                    <div>
+                      <p style={styles.modalP}>
+                        For each customer, we compute <b>top drivers</b> from
+                        Logistic Regression:
+                      </p>
+                      <p style={styles.modalP}>
+                        contribution(feature) = transformed_value × coefficient
+                      </p>
+                      <ul style={styles.modalUl}>
+                        <li>
+                          <b>↑ churn</b>: feature increases churn probability
+                        </li>
+                        <li>
+                          <b>↓ churn</b>: feature decreases churn probability
+                        </li>
+                        <li>We show top 3 drivers by absolute impact</li>
+                      </ul>
+                    </div>
+                  )
+                }
+              >
+                Explainable
+              </button>
             </div>
           </div>
 
@@ -187,10 +304,26 @@ export default function App() {
               >
                 Download CSV
               </button>
+
+              <button
+                onClick={downloadJSON}
+                disabled={!data}
+                style={styles.secondaryBtn}
+              >
+                Download JSON
+              </button>
+
+              <button onClick={onClear} style={styles.secondaryBtn}>
+                Clear
+              </button>
             </div>
           </div>
 
           {error && <div style={styles.errorBox}>⚠️ {error}</div>}
+
+          <div style={styles.envHint}>
+            API: <span style={styles.envHintMono}>{API_BASE}</span>
+          </div>
         </div>
       </div>
 
@@ -239,7 +372,11 @@ export default function App() {
             <Card title="Top Feature Importance" subtitle="Global impact from coefficients">
               <div style={{ height: 260 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={importanceChartData} layout="vertical" margin={{ left: 30 }}>
+                  <BarChart
+                    data={importanceChartData}
+                    layout="vertical"
+                    margin={{ left: 30 }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis type="number" />
                     <YAxis type="category" dataKey="feature" width={190} />
@@ -260,7 +397,11 @@ export default function App() {
             rows.length > 0 && (
               <div style={styles.riskPills}>
                 <RiskPill tone="high" label="High" value={riskCounts.high} />
-                <RiskPill tone="moderate" label="Moderate" value={riskCounts.moderate} />
+                <RiskPill
+                  tone="moderate"
+                  label="Moderate"
+                  value={riskCounts.moderate}
+                />
                 <RiskPill tone="low" label="Low" value={riskCounts.low} />
               </div>
             )
@@ -288,7 +429,9 @@ export default function App() {
                   filteredRows.map((r, idx) => (
                     <tr key={idx} style={idx % 2 ? styles.rowAlt : undefined}>
                       <td style={styles.tdMono}>{r.customerID ?? "—"}</td>
-                      <td style={styles.td}>{Number(r.churn_probability).toFixed(3)}</td>
+                      <td style={styles.td}>
+                        {Number(r.churn_probability).toFixed(3)}
+                      </td>
                       <td style={styles.td}>
                         {r.churn_prediction === 1 ? (
                           <span style={styles.predBad}>Churn</span>
@@ -316,6 +459,21 @@ export default function App() {
           </div>
         </Card>
       </div>
+
+      {/* MODAL */}
+      {modal.open && (
+        <div style={styles.modalOverlay} onClick={closeModal}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <div style={styles.modalTitle}>{modal.title}</div>
+              <button style={styles.modalClose} onClick={closeModal}>
+                ✕
+              </button>
+            </div>
+            <div style={styles.modalBody}>{modal.body}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -358,7 +516,8 @@ function RiskPill({ tone, label, value }) {
 }
 
 function DriverList({ drivers }) {
-  if (!Array.isArray(drivers) || drivers.length === 0) return <span style={styles.mutedCell}>—</span>;
+  if (!Array.isArray(drivers) || drivers.length === 0)
+    return <span style={styles.mutedCell}>—</span>;
 
   return (
     <div style={{ display: "grid", gap: 6 }}>
@@ -378,9 +537,14 @@ function DriverList({ drivers }) {
 /* ---------- helpers ---------- */
 
 function pillFor(tier) {
-  if (tier === "high") return { background: "#fee2e2", borderColor: COLORS.high, color: "#991b1b" };
+  if (tier === "high")
+    return { background: "#fee2e2", borderColor: COLORS.high, color: "#991b1b" };
   if (tier === "moderate")
-    return { background: "#ffedd5", borderColor: COLORS.moderate, color: "#92400e" };
+    return {
+      background: "#ffedd5",
+      borderColor: COLORS.moderate,
+      color: "#92400e",
+    };
   return { background: "#dcfce7", borderColor: COLORS.low, color: "#166534" };
 }
 
@@ -391,12 +555,10 @@ function tagFor(direction) {
 }
 
 function cleanFeatureName(name) {
-  // Shorten long feature strings for chart axis readability
   return name.replace("preprocess__", "").slice(0, 42);
 }
 
 function humanizeDriver(name) {
-  // Make driver labels slightly nicer
   return String(name)
     .replace("preprocess__", "")
     .replace(/_/g, " ")
@@ -426,7 +588,12 @@ const styles = {
     borderBottom: `1px solid ${COLORS.cardBorder}`,
   },
   headerInner: { maxWidth: 1100, margin: "0 auto", padding: "22px 22px 18px" },
-  headerTopRow: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  headerTopRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
 
   brand: { display: "flex", gap: 12, alignItems: "center" },
   logoDot: {
@@ -440,12 +607,13 @@ const styles = {
   brandSub: { fontSize: 13, color: COLORS.subtext, marginTop: 2 },
 
   badges: { display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "end" },
-  badge: {
+  badgeBtn: {
     fontSize: 12,
     padding: "6px 10px",
     borderRadius: 999,
     background: "rgba(255,255,255,0.75)",
     border: `1px solid ${COLORS.cardBorder}`,
+    cursor: "pointer",
   },
 
   controls: {
@@ -481,7 +649,13 @@ const styles = {
     cursor: "pointer",
   },
 
-  rightControls: { display: "flex", gap: 10, alignItems: "end", justifyContent: "end" },
+  rightControls: {
+    display: "flex",
+    gap: 10,
+    alignItems: "end",
+    justifyContent: "end",
+    flexWrap: "wrap",
+  },
   label: { fontSize: 12, color: COLORS.subtext, marginBottom: 6 },
   select: {
     background: "white",
@@ -500,9 +674,24 @@ const styles = {
     color: "#991b1b",
   },
 
+  envHint: {
+    marginTop: 10,
+    fontSize: 12,
+    color: COLORS.subtext,
+  },
+  envHintMono: {
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+    color: COLORS.text,
+  },
+
   main: { maxWidth: 1100, margin: "0 auto", padding: "16px 22px 40px" },
 
-  kpiGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 12 },
+  kpiGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, 1fr)",
+    gap: 12,
+    marginBottom: 12,
+  },
   kpiCard: {
     background: "white",
     border: `1px solid ${COLORS.cardBorder}`,
@@ -510,10 +699,20 @@ const styles = {
     padding: 16,
   },
   kpiLabel: { fontSize: 12, color: COLORS.subtext },
-  kpiValue: { fontSize: 32, fontWeight: 900, marginTop: 6, letterSpacing: -0.4 },
+  kpiValue: {
+    fontSize: 32,
+    fontWeight: 900,
+    marginTop: 6,
+    letterSpacing: -0.4,
+  },
   kpiHint: { fontSize: 12, color: COLORS.subtext, marginTop: 6 },
 
-  chartGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 },
+  chartGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 12,
+    marginBottom: 12,
+  },
 
   card: {
     background: "white",
@@ -521,11 +720,21 @@ const styles = {
     borderRadius: 14,
     padding: 14,
   },
-  cardHeader: { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "end" },
+  cardHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    alignItems: "end",
+  },
   cardTitle: { fontSize: 14, fontWeight: 900 },
   cardSub: { fontSize: 12, color: COLORS.subtext, marginTop: 4 },
 
-  riskPills: { display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "end" },
+  riskPills: {
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+    justifyContent: "end",
+  },
   riskPill: {
     display: "flex",
     alignItems: "center",
@@ -539,23 +748,118 @@ const styles = {
   riskLabel: { fontSize: 12, color: COLORS.subtext },
   riskValue: { fontSize: 12, fontWeight: 900 },
 
-  tableWrap: { marginTop: 12, borderRadius: 12, overflow: "hidden", border: `1px solid ${COLORS.cardBorder}` },
+  tableWrap: {
+    marginTop: 12,
+    borderRadius: 12,
+    overflow: "hidden",
+    border: `1px solid ${COLORS.cardBorder}`,
+  },
   table: { width: "100%", borderCollapse: "collapse" },
-  th: { textAlign: "left", padding: "12px 12px", fontSize: 12, color: COLORS.subtext, background: "#fafafa", borderBottom: `1px solid ${COLORS.cardBorder}` },
-  td: { padding: "12px 12px", borderBottom: `1px solid ${COLORS.cardBorder}`, fontSize: 13, verticalAlign: "top" },
-  tdMono: { padding: "12px 12px", borderBottom: `1px solid ${COLORS.cardBorder}`, fontSize: 13, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", verticalAlign: "top" },
+  th: {
+    textAlign: "left",
+    padding: "12px 12px",
+    fontSize: 12,
+    color: COLORS.subtext,
+    background: "#fafafa",
+    borderBottom: `1px solid ${COLORS.cardBorder}`,
+  },
+  td: {
+    padding: "12px 12px",
+    borderBottom: `1px solid ${COLORS.cardBorder}`,
+    fontSize: 13,
+    verticalAlign: "top",
+  },
+  tdMono: {
+    padding: "12px 12px",
+    borderBottom: `1px solid ${COLORS.cardBorder}`,
+    fontSize: 13,
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+    verticalAlign: "top",
+  },
   rowAlt: { background: "#fcfcfd" },
 
-  pill: { display: "inline-block", padding: "5px 10px", borderRadius: 999, border: "1px solid", fontSize: 12, fontWeight: 800, textTransform: "capitalize" },
+  pill: {
+    display: "inline-block",
+    padding: "5px 10px",
+    borderRadius: 999,
+    border: "1px solid",
+    fontSize: 12,
+    fontWeight: 800,
+    textTransform: "capitalize",
+  },
   predBad: { fontWeight: 900, color: "#b91c1c" },
   predGood: { fontWeight: 900, color: "#166534" },
 
   mutedCell: { color: COLORS.subtext },
 
-  driverRow: { display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, alignItems: "center" },
+  driverRow: {
+    display: "grid",
+    gridTemplateColumns: "1fr auto auto",
+    gap: 8,
+    alignItems: "center",
+  },
   driverFeature: { fontSize: 12, color: COLORS.text },
-  driverTag: { fontSize: 11, padding: "3px 8px", borderRadius: 999, border: "1px solid", whiteSpace: "nowrap" },
-  driverImpact: { fontSize: 11, color: COLORS.subtext, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" },
+  driverTag: {
+    fontSize: 11,
+    padding: "3px 8px",
+    borderRadius: 999,
+    border: "1px solid",
+    whiteSpace: "nowrap",
+  },
+  driverImpact: {
+    fontSize: 11,
+    color: COLORS.subtext,
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+  },
 
   smallMuted2: { marginTop: 10, fontSize: 12, color: COLORS.subtext },
+
+  // Modal styles
+  modalOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(15, 23, 42, 0.35)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    zIndex: 9999,
+  },
+  modal: {
+    width: "min(720px, 96vw)",
+    background: "white",
+    border: `1px solid ${COLORS.cardBorder}`,
+    borderRadius: 16,
+    boxShadow: "0 12px 40px rgba(0,0,0,0.18)",
+    overflow: "hidden",
+  },
+  modalHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "14px 16px",
+    borderBottom: `1px solid ${COLORS.cardBorder}`,
+  },
+  modalTitle: { fontWeight: 900, fontSize: 14, color: COLORS.text },
+  modalClose: {
+    border: `1px solid ${COLORS.cardBorder}`,
+    background: "white",
+    borderRadius: 10,
+    padding: "6px 10px",
+    cursor: "pointer",
+  },
+  modalBody: { padding: 16, color: COLORS.text },
+
+  modalP: {
+    margin: "8px 0",
+    color: COLORS.subtext,
+    fontSize: 13,
+    lineHeight: 1.5,
+  },
+  modalUl: {
+    margin: "8px 0 0",
+    color: COLORS.subtext,
+    fontSize: 13,
+    lineHeight: 1.6,
+  },
 };
